@@ -1,0 +1,2 @@
+Title: Viridian RPG Client
+Author: Port, siba
