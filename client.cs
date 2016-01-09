@@ -12,22 +12,34 @@ if (!isObject(VIR_DialogView)) {
 		new GuiMouseEventCtrl() {
 			profile = GuiDefaultProfile;
 			extent = "1280 720";
-			shouldCloseParent = 1;
+			shouldCloseVIRDialog = 1;
 		};
-    };
+  };
 }
 
-function VIR_OpenDialog()
+function VIR_OpenDialog(%type)
 {
+	echo("vir_opendialog" SPC %type);
+	VIR_DialogView.type = %type;
+
 	while (VIR_DialogView.getCount() > 1)
 		VIR_DialogView.remove(VIR_DialogView.getObject(1));
 
     Canvas.pushDialog(VIR_DialogView);
 }
 
-function VIR_CloseDialog()
+function VIR_CloseDialog(%force)
 {
-    Canvas.popDialog(VIR_DialogView);
+	if (!%force)
+	{
+		echo("close" SPC VIR_DialogView.type);
+		switch$ (VIR_DialogView.type)
+		{
+			case "bank": commandToServer('VIR_CloseBank'); return;
+		}
+	}
+
+  Canvas.popDialog(VIR_DialogView);
 }
 
 exec("./inventory/init.cs");

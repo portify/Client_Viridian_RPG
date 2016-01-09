@@ -17,7 +17,14 @@ package VIR_InventoryPacman {
 	function GuiMouseEventCtrl::onMouseDown(%this, %mod, %pos, %state) {
 		Parent::onMouseDown(%this, %mod, %pos, %state);
 
-		if (%this.shouldCloseParent) {
+		if (%this.shouldCloseVIRDialog)
+		{
+			VIR_CloseDialog();
+			return;
+		}
+
+		if (%this.shouldCloseParent)
+		{
 			// this probably shouldn't be here anymore
 			Canvas.popDialog(%this.getGroup());
 			return;
@@ -65,7 +72,7 @@ package VIR_InventoryPacman {
 				}
 				else
 				{
-					%text = %text @ "\n<a:gamelink_deposit>Deposit</a>";
+					%text = %text @ "\n<a:gamelink_drop>Deposit</a>";
 				}
 
 				%text = %text @ "\n<a:gamelink_cancel>Cancel</a>";
@@ -119,11 +126,28 @@ function GuiControl::findByInternalName(%this, %internalName, %immediate) {
 function VIR_InventoryPopupText::onURL(%this, %url) {
 	%action = getSubStr(%url, 9, strlen(%url));
 
-	if (%action $= "drop" && VIR_InventoryPopup.actualSlot.itemCount > 1) {
+	if ((VIR_Bank.isAwake() && %action !$= "cancel") || (%action $= "drop" && VIR_InventoryPopup.actualSlot.itemCount > 1)) {
 		VIR_InventoryDropPopup.slot = VIR_InventoryPopup.actualSlot;
+		VIR_InventoryDropPopup.withdrawing = false;
 		VIR_InventoryDropPopupBack.position = VIR_InventoryPopupBack.position;
 		VIR_InventoryDropPopupInput.setValue("");
 		VIR_InventoryDropPopupInput.makeFirstResponder(1);
+
+		if (VIR_Bank.isAwake())
+		{
+			VIR_InventoryDropBtnCnt.setText("Deposit");
+			VIR_InventoryDropBtnAll.setText("All");
+			VIR_InventoryDropBtnCnt.resize( 76, 8, 55, 18);
+			VIR_InventoryDropBtnAll.resize(135, 8, 35, 18);
+		}
+		else
+		{
+			VIR_InventoryDropBtnCnt.setText("Drop");
+			VIR_InventoryDropBtnAll.setText("Drop All");
+			VIR_InventoryDropBtnCnt.resize( 76, 8, 40, 18);
+			VIR_InventoryDropBtnAll.resize(120, 8, 50, 18);
+		}
+
 		Canvas.pushDialog(VIR_InventoryDropPopup);
 		Canvas.popDialog(VIR_InventoryPopup);
 	} else if (%action $= "equip") {
@@ -149,6 +173,8 @@ function clientCmdVIR_SetInventory(%scope, %index, %data, %count) {
 		%slot = VIR_Inventory.getObject(2).findByInternalName(%index, 1);
 	} else if (%scope $= "items") {
 		%slot = VIR_Inventory.getObject(3).getObject(%index);
+	} else if (%scope $= "bank") {
+		%slot = VIR_Bank.getObject(0).getObject(0).getObject(%index);
 	} else {
 		return;
 	}
@@ -198,6 +224,27 @@ function clientCmdVIR_ClearInventory() {
 	for (%i = 0; %i < 36; %i++) {
 		clientCmdVIR_SetInventory('items', %i, 0, 0);
 	}
+
+	for (%i = 0; %i < 72; %i++) {
+		clientCmdVIR_SetInventory('bank', %i, 0, 0);
+	}
+}
+
+function clientCmdVIR_SetContainer(%scope, %slot, %item, %count)
+{
+	clientCmdVIR_SetInventory(%scope, %slot, %item, %count);
+}
+
+function clientCmdVIR_ClearContainer(%scope)
+{
+	switch$ (getTaggedString(%scope))
+	{
+		case "items": %slots = 36;
+		case "bank": %slots = 72;
+	}
+
+	for (%i = 0; %i < %slots; %i++)
+		clientCmdVIR_SetContainer(%scope, %i);
 }
 
 function clientCmdVIR_ItemData(%item, %attr, %value)
@@ -234,15 +281,21 @@ function clientCmdVIR_ItemData(%item, %attr, %value)
 	}
 }
 
-function VIR_Inventory_DropItem(%all) {
+function VIR_Inventory_DropItem(%all)
+{
 	Canvas.popDialog(VIR_InventoryDropPopup);
 
 	if (%all) {
 		%count = VIR_InventoryDropPopup.slot.itemCount;
+
+		if (%count $= "")
+			%count = 1;
 	} else {
 		%count = VIR_InventoryDropPopupInput.getValue();
 
-		if (strlen(%count) > 3 && getSubStr(%count, strlen(%count) - 3, 3) $= "mil") {
+		if (%count $= "") {
+			%count = 1;
+		} else if (strlen(%count) > 3 && getSubStr(%count, strlen(%count) - 3, 3) $= "mil") {
 			%count = (getSubStr(%count, 0, strlen(%count) - 3) * 1000000) | 0;
 		} else if (strlen(%count) > 1 && getSubStr(%count, strlen(%count) - 1, 1) $= "m") {
 			%count = (getSubStr(%count, 0, strlen(%count) - 1) * 1000000) | 0;
@@ -251,7 +304,23 @@ function VIR_Inventory_DropItem(%all) {
 		}
 	}
 
-	commandToServer('VIR_DropItem', VIR_InventoryDropPopup.slot.itemData, %count);
+	if (VIR_Bank.isAwake())
+	{
+		if (VIR_InventoryDropPopup.withdrawing)
+		{
+			%source = 'bank';
+			%target = 'inventory';
+		}
+		else
+		{
+			%source = 'inventory';
+			%target = 'bank';
+		}
+
+		commandToServer('VIR_TransferItem', VIR_InventoryDropPopup.slot.itemData, %count, %source, %target);
+	}
+	else
+		commandToServer('VIR_DropItem', VIR_InventoryDropPopup.slot.itemData, %count);
 }
 
 if (!isObject(VIR_InventoryDropPopup)) {
@@ -270,13 +339,12 @@ if (!isObject(VIR_InventoryDropPopup)) {
 			color = "50 50 50 255";
 
 			new GuiTextEditCtrl(VIR_InventoryDropPopupInput) {
-				profile = "GuiDefaultProfile";
 				position = "8 8";
 				extent = "60 18";
 				altCommand = "VIR_Inventory_DropItem(0);";
 			};
 
-			new GuiBitmapButtonCtrl() {
+			new GuiBitmapButtonCtrl(VIR_InventoryDropBtnCnt) {
 				profile = GuiCenterTextProfile;
 				bitmap = "Add-Ons/Client_Viridian_RPG/img/small_button";
 				position = "76 8";
@@ -285,7 +353,7 @@ if (!isObject(VIR_InventoryDropPopup)) {
 				command = "VIR_Inventory_DropItem(0);";
 			};
 
-			new GuiBitmapButtonCtrl() {
+			new GuiBitmapButtonCtrl(VIR_InventoryDropBtnAll) {
 				profile = GuiCenterTextProfile;
 				bitmap = "Add-Ons/Client_Viridian_RPG/img/small_button";
 				position = "120 8";
@@ -396,7 +464,7 @@ if (!isObject(VIR_Inventory)) {
 			extent = "16 15";
 			bitmap = "./iconCross";
 			text = "";
-			command = "Canvas.popDialog(VIR_DialogView);";
+			command = "VIR_CloseBank();";
 			accelerator = "escape"; // does this even work
 		};
 

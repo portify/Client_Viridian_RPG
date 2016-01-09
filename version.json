@@ -1,0 +1,11 @@
+{
+  "version": "1.11.0",
+  "channel": "release",
+  "repositories":
+  [
+    {
+      "url": "http://portify.github.io/Client_Viridian_RPG",
+      "format": "JSON"
+    }
+  ]
+}
