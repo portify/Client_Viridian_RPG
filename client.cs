@@ -1,5 +1,5 @@
 exec("./Support_ClientModuleC.cs");
-registerClientModule("VIR", 10);
+registerClientModule("VIR", 11);
 
 exec("./magic.cs");
 exec("./generic.cs");
